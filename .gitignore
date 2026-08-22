@@ -1,0 +1,25 @@
+# Device-identifying or personal diagnostic material: never publish raw.
+work/device-captures/**/*-private.txt
+work/device-captures/**/*.zip
+work/device-captures/**/bugreport-*.txt
+
+# Large local firmware, extraction and reference inputs. These remain on disk
+# but must not be duplicated into automatic Git/Codex checkpoint packs.
+/work/
+/recovery-a8d3/
+/references/
+/tools/
+/*.rar
+/*.apk
+/lineage/vendor/teclast/t65max/proprietary/
+/lineage/device/teclast/*-kernel*/**/*.ko
+/lineage/device/teclast/*-kernel*/Image.gz
+/lineage/device/teclast/*-kernel*/**/*.dtb
+/lineage/device/teclast/*-kernel*/kernel-config.gz
+/lineage-build/
+
+# Generated Python cache.
+**/__pycache__/
+*.pyc
+lineage/vendor/.DS_Store
+.DS_Store
