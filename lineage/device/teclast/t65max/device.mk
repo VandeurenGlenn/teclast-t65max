@@ -24,13 +24,22 @@ AB_OTA_PARTITIONS := \
     vbmeta_vendor
 
 PRODUCT_PACKAGES += \
+    android.hardware.boot-service.default_recovery \
     fastbootd \
+    FrameworkResOverlay \
+    FrameworkResOverlayExt \
+    libkeystore-engine-wifi-hidl \
+    libkeystore-wifi-hidl \
+    TabletFrameworkResOverlay \
     update_engine \
     update_engine_sideload \
-    update_verifier
+    update_verifier \
+    WifiResOverlay
 
 PRODUCT_COPY_FILES += \
-    $(LOCAL_PATH)/rootdir/etc/fstab.mt8781:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.mt8781
+    $(LOCAL_PATH)/rootdir/etc/fstab.mt8781:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.mt8781 \
+    $(LOCAL_PATH)/rootdir/init.recovery.mt8781.rc:$(TARGET_COPY_OUT_RECOVERY)/root/init.recovery.mt6789.rc \
+    $(LOCAL_PATH)/rootdir/init.recovery.mt8781.rc:$(TARGET_COPY_OUT_RECOVERY)/root/init.recovery.mt8781.rc
 
 PRODUCT_SOONG_NAMESPACES += \
     $(LOCAL_PATH) \

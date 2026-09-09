@@ -1,0 +1,15 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl git git-lfs python3 rsync \
+    && curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
+        -o /usr/local/bin/repo \
+    && chmod 0755 /usr/local/bin/repo \
+    && git lfs install --system \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+CMD ["bash"]

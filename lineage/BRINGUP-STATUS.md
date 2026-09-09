@@ -46,6 +46,20 @@
   including display/touch, connectivity, cameras, audio, sensors, cellular,
   GNSS, charging, suspend/resume, DRM/media and cold boot.
 - XML and Python helper validation pass.
+- LineageOS 23.2 `vendorbootimage` now builds successfully. The first recovery
+  test artifact is `lineage-23.2-t65max-vendor_boot-20260906.img` (64 MiB,
+  SHA-256 `e65acc45cfeff350f8124be50584beb286fd7927989fa2b09808beab70597ce8`).
+  Its v4 header, load addresses, command line and DTB size match the verified
+  A8D4 stock `vendor_boot`. It was flashed to `vendor_boot_a` from rooted
+  Android after verifying the existing stock partition checksum, and it boots
+  successfully into the Lineage Recovery UI on the A8D3 test tablet. Both
+  normal Android and the Lineage fastbootd UI also start with this image.
+  The follow-up recovery image supplies the stock-observed USB gadget setup
+  for both `mt8781` and `mt6789`. On-device validation confirms recovery ADB,
+  ADB sideload and userspace fastbootd all enumerate over USB on macOS.
+  Fastbootd reports `is-userspace: yes` and product `t65max`; its
+  `current-slot` variable is empty, while recovery reports slot `_a`.
+  Remaining UI/storage functions still require validation.
 
 ## Important findings
 
@@ -65,8 +79,10 @@
    the vendor makefiles from the locally captured Teclast blobs.
 2. Reconcile LineageOS 23.x framework matrices with the stock level-6 VINTF
    contract and implement only the necessary blob fixups/shims.
-3. Produce recovery and boot images in a full LineageOS source checkout.
-4. Test recovery first, then an enforcing system build, keeping a full stock
+3. Complete non-destructive Lineage Recovery validation (buttons/touch, ADB,
+   slot reporting and partition visibility) while preserving the verified
+   A8D4 stock image as an immediate rollback.
+4. Then produce and test an enforcing system build, keeping a full stock
    recovery path throughout.
 5. Validate every LineageOS device-support requirement before requesting
    official inclusion.

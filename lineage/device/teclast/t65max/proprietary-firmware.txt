@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Raw firmware-partition payloads belong here. The current T65 Max extraction
+# uses filesystem blobs from proprietary-files.txt, so this list is empty.
