@@ -48,7 +48,7 @@ while :; do
         exit 0
     fi
     echo
-    echo "Vernieuwt elke 5 seconden; Ctrl-C sluit alleen deze monitor."
-    sleep 5
+    echo "Vernieuwt elke 60 seconden; Ctrl-C sluit alleen deze monitor."
+    sleep 60
 done
 REMOTE
