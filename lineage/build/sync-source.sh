@@ -20,5 +20,5 @@ if [[ ! -d .repo ]]; then
 fi
 
 mkdir -p .repo/local_manifests
-cp "$PROJECT_DIR/lineage/docker/t65max.xml" .repo/local_manifests/t65max.xml
+cp "$PROJECT_DIR/lineage/build/t65max.xml" .repo/local_manifests/t65max.xml
 repo sync -c --no-tags --no-clone-bundle --force-sync --fail-fast -j"$SYNC_JOBS"

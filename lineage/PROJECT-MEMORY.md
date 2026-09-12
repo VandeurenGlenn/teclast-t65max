@@ -59,9 +59,10 @@ suspend require on-device validation before being considered complete.
   release compiler. For this local BP4A tree the Trusty dirgroup is pointed at
   the available `clang-r563880c`; downloading the unused historical compiler
   worktrees increased Soong scan cost without helping the T65 Max target.
-- On the 24 GB Apple Silicon build host, a 16 GB Colima VM was OOM-killed during
-  Soong analysis. The current profile uses 18 GB RAM plus temporary VM swap.
-  This is a build-host workaround, not a device-tree validation result.
+- On the 24 GB Apple Silicon build host, an earlier 16 GB Colima VM was
+  OOM-killed during unconstrained Soong analysis. The guarded build now uses a
+  16 GB VM plus temporary VM swap and bounded Go memory, leaving enough RAM for
+  macOS. This is a build-host workaround, not a device-tree validation result.
 - Soong analysis of this checkout reached 21.6 GB resident memory and exhausted
   a 22 GB VM plus 4 GB swap. The automated build now bounds the Go heap with
   `GOMEMLIMIT=16GiB` and `GOGC=50`. Because Soong deliberately launches its
@@ -69,6 +70,42 @@ suspend require on-device validation before being considered complete.
   passes only those two Go controls into that sanitized subprocess. Prefer this
   guarded setting over repeatedly enlarging the VM or consuming scarce host
   storage with swap.
+- On the 24 GB macOS host, use `build/run-auto-build-linux-macos.sh`. It runs
+  Android directly as the ordinary user in the `lineage-linux` VM and creates
+  an 8 GB temporary swap file on the VM data disk. The exit trap removes swap
+  and trims the disk so APFS can reclaim host space. Docker is not in the build
+  path.
+- For a complete flashable LineageOS package, use
+  `build/run-full-build-limited-macos.sh`. It builds `bacon` with three jobs,
+  a 16 GiB Go heap limit, 8 GiB temporary VM swap, and a persistent bounded
+  12 GiB ccache inside the VM-native `out` directory. It refuses to start with
+  less than 60 GiB free on the external build volume.
+- Do not use the `lineage-fast` VirtioFS profile. Two repeatable macOS 27.0
+  panics occurred while its VZ VM accessed the external USB source tree: first
+  `watchdogd` and then `launchd` exited with signal 10, with a VirtioFS thread
+  blocked in kernel I/O during the second panic. The stable profile is
+  `lineage-linux`: 6 vCPUs, 16 GiB RAM, Rosetta, no host directory mounts, and
+  a native Linux ext4 data disk backed by a sparse image on the external SSD.
+  Source and the restored `out` cache were migrated over SSH onto that ext4
+  disk. They belong to the ordinary Lima user. Root is limited to one-time VM
+  provisioning, the targeted ext4 bind mount and temporary swap management;
+  Android build commands never run as root. The small workspace project tree
+  is mirrored over SSH before each build and logs are copied back afterward.
+- The former Docker workflow remains only as a legacy fallback under
+  `lineage/build`; the supported full-build entry point does not invoke it.
+- The `lineage-linux` VM itself is arm64, while this Android checkout supplies
+  `linux-x86` host prebuilts. Rosetta executes those x86_64 tools successfully.
+  The direct-build preflight shadows only `uname -m` as `x86_64`, causing the
+  AOSP bootstrap to select the supplied host tools without falsifying other
+  kernel information or changing the ARM64 device target.
+- The former case-insensitive checkout lost some tracked case-colliding files.
+  After explicit destructive-reset authorization, the VM checkout was restored
+  locally to its manifest revisions without touching `out` or ccache. The 6.8
+  GiB standalone sparse clang checkout is the only manifest exception: forcing
+  Repo's empty object linkage would discard its required `clang-r563880c`
+  selection and locally present compiler payloads. When Soong later reports an
+  exact missing module source, the build loop still restores only that tracked
+  path from its owning repository's `HEAD`.
 - Use LineageOS's source-built `android.hardware.health@2.1-impl` instead of
   retaining the stock `android.hardware.health@2.0-impl-2.1.so`. Both install
   the same vendor hw-library path, and keeping the prebuilt creates a Kati

@@ -1,13 +1,18 @@
 #!/bin/bash
 set -eo pipefail
 
-SOURCE_DIR=/src
-PROJECT_DIR=/project
-BUILD_JOBS=${BUILD_JOBS:-6}
+SOURCE_DIR=${SOURCE_DIR:-/src}
+PROJECT_DIR=${PROJECT_DIR:-/project}
+BUILD_JOBS=${BUILD_JOBS:-3}
 MAX_ROUNDS=${MAX_ROUNDS:-50}
 GOMEMLIMIT=${GOMEMLIMIT:-16GiB}
 GOGC=${GOGC:-50}
-export GOMEMLIMIT GOGC
+BUILD_TARGET=${BUILD_TARGET:-vendorbootimage}
+CCACHE_MAX_SIZE=${CCACHE_MAX_SIZE:-6G}
+CCACHE_DIR=${CCACHE_DIR:-$SOURCE_DIR/out/.ccache}
+HOST_TOOL_SHIMS="$PROJECT_DIR/lineage/build/host-tools"
+PATH="$HOST_TOOL_SHIMS:$PATH"
+export GOMEMLIMIT GOGC CCACHE_DIR USE_CCACHE=1 PATH
 BLOB_LIST="$PROJECT_DIR/lineage/device/teclast/t65max/proprietary-files.txt"
 AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-copy-rule-audit.tsv"
 INSTALL_AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-install-conflict-audit.tsv"
@@ -49,29 +54,30 @@ sync_and_extract() {
 }
 
 mkdir -p "$LOG_DIR"
-python3 "$PROJECT_DIR/lineage/docker/apply-kati-install-conflicts.py" \
+python3 "$PROJECT_DIR/lineage/build/apply-kati-install-conflicts.py" \
     --normalize-renames \
     --blob-list "$BLOB_LIST" \
     --audit-log "$INSTALL_AUDIT_LOG" \
     --round preflight-renamed-modules
 sync_and_extract
-python3 "$PROJECT_DIR/lineage/docker/apply-casefold-source-fixes.py" \
+python3 "$PROJECT_DIR/lineage/build/apply-casefold-source-fixes.py" \
     --source "$SOURCE_DIR"
-python3 "$PROJECT_DIR/lineage/docker/apply-soong-memory-limits.py" \
+python3 "$PROJECT_DIR/lineage/build/apply-soong-memory-limits.py" \
     --source "$SOURCE_DIR"
 
 cd "$SOURCE_DIR"
 git config --global user.name "T65 Max Builder"
 git config --global user.email "t65max-builder@localhost"
-ccache -M 20G
+mkdir -p "$CCACHE_DIR"
+ccache -M "$CCACHE_MAX_SIZE"
 source build/envsetup.sh
 lunch lineage_t65max-bp4a-userdebug
 
 for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
     log_path="$LOG_DIR/round-$(printf '%02d' "$round_number").log"
-    echo "round $round_number: building"
+    echo "round $round_number: building $BUILD_TARGET"
     set +e
-    m -j"$BUILD_JOBS" vendorbootimage >"$log_path" 2>&1
+    m -j"$BUILD_JOBS" "$BUILD_TARGET" >"$log_path" 2>&1
     build_status=$?
     set -e
 
@@ -81,7 +87,7 @@ for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
     fi
 
     set +e
-    python3 "$PROJECT_DIR/lineage/docker/retry-transient-aidl-checks.py" \
+    python3 "$PROJECT_DIR/lineage/build/restore-missing-source-paths.py" \
         --log "$log_path" \
         --source "$SOURCE_DIR"
     fix_status=$?
@@ -89,7 +95,16 @@ for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
 
     if [[ $fix_status -ne 0 ]]; then
         set +e
-        python3 "$PROJECT_DIR/lineage/docker/apply-partition-conflicts.py" \
+        python3 "$PROJECT_DIR/lineage/build/retry-transient-aidl-checks.py" \
+            --log "$log_path" \
+            --source "$SOURCE_DIR"
+        fix_status=$?
+        set -e
+    fi
+
+    if [[ $fix_status -ne 0 ]]; then
+        set +e
+        python3 "$PROJECT_DIR/lineage/build/apply-partition-conflicts.py" \
             --log "$log_path" \
             --blob-list "$BLOB_LIST" \
             --audit-log "$AUDIT_LOG" \
@@ -100,7 +115,7 @@ for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
 
     if [[ $fix_status -ne 0 ]]; then
         set +e
-        python3 "$PROJECT_DIR/lineage/docker/apply-kati-install-conflicts.py" \
+        python3 "$PROJECT_DIR/lineage/build/apply-kati-install-conflicts.py" \
             --log "$log_path" \
             --blob-list "$BLOB_LIST" \
             --audit-log "$INSTALL_AUDIT_LOG" \

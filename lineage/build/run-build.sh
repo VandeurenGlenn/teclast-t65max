@@ -8,9 +8,9 @@ mkdir -p "$SOURCE_DIR"
 
 docker build \
     --platform linux/arm64 \
-    -f "$PROJECT_DIR/lineage/docker/Dockerfile.sync" \
+    -f "$PROJECT_DIR/lineage/build/Dockerfile.sync" \
     -t t65max-lineage-sync:23.2 \
-    "$PROJECT_DIR/lineage/docker"
+    "$PROJECT_DIR/lineage/build"
 
 docker run --rm \
     --platform linux/arm64 \
@@ -20,12 +20,12 @@ docker run --rm \
     -v "$PROJECT_DIR:/project" \
     -v "$SOURCE_DIR:/src" \
     t65max-lineage-sync:23.2 \
-    /project/lineage/docker/sync-source.sh
+    /project/lineage/build/sync-source.sh
 
 docker build \
     --platform linux/amd64 \
     -t t65max-lineage-builder:23.2 \
-    "$PROJECT_DIR/lineage/docker"
+    "$PROJECT_DIR/lineage/build"
 
 exec docker run --rm \
     --platform linux/amd64 \
@@ -35,4 +35,4 @@ exec docker run --rm \
     -v "$PROJECT_DIR:/project" \
     -v "$SOURCE_DIR:/src" \
     t65max-lineage-builder:23.2 \
-    /project/lineage/docker/build-only.sh
+    /project/lineage/build/build-only.sh

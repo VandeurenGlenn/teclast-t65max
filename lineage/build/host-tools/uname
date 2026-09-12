@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# The VM kernel is arm64, but this checkout carries Google's linux-x86 host
+# prebuilts. Rosetta executes those binaries; only AOSP's host-tool selector
+# must see x86_64.
+case "$*" in
+    -m|--machine)
+        printf '%s\n' x86_64
+        ;;
+    *)
+        exec /usr/bin/uname "$@"
+        ;;
+esac
