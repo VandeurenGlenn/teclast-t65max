@@ -6,8 +6,8 @@ PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 # Conservative defaults for a 24 GiB Apple Silicon Mac. Override when needed.
 : "${T65MAX_BUILD_JOBS:=3}"
 : "${T65MAX_SWAP_GIB:=8}"
-: "${T65MAX_GO_MEMORY_LIMIT:=16GiB}"
-: "${T65MAX_GO_GC:=50}"
+: "${T65MAX_GO_MEMORY_LIMIT:=12GiB}"
+: "${T65MAX_GO_GC:=25}"
 : "${T65MAX_CCACHE_SIZE:=12G}"
 
 BUILD_VOLUME=${T65MAX_BUILD_VOLUME:-/Volumes/LineageBuild}

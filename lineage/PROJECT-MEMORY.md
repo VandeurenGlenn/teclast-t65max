@@ -63,9 +63,10 @@ suspend require on-device validation before being considered complete.
   OOM-killed during unconstrained Soong analysis. The guarded build now uses a
   16 GB VM plus temporary VM swap and bounded Go memory, leaving enough RAM for
   macOS. This is a build-host workaround, not a device-tree validation result.
-- Soong analysis of this checkout reached 21.6 GB resident memory and exhausted
-  a 22 GB VM plus 4 GB swap. The automated build now bounds the Go heap with
-  `GOMEMLIMIT=16GiB` and `GOGC=50`. Because Soong deliberately launches its
+- Soong analysis of this checkout reached 21.6 GB resident memory and later
+  twice OOM-killed `soong_build` near 14 GiB RSS after exhausting an 8 GiB
+  swapfile in the 16 GiB VM. The automated build now bounds the Go heap with
+  `GOMEMLIMIT=12GiB` and `GOGC=25`. Because Soong deliberately launches its
   primary builder with an empty environment, the build preflight idempotently
   passes only those two Go controls into that sanitized subprocess. Prefer this
   guarded setting over repeatedly enlarging the VM or consuming scarce host
@@ -77,7 +78,7 @@ suspend require on-device validation before being considered complete.
   path.
 - For a complete flashable LineageOS package, use
   `build/run-full-build-limited-macos.sh`. It builds `bacon` with three jobs,
-  a 16 GiB Go heap limit, 8 GiB temporary VM swap, and a persistent bounded
+  a 12 GiB Go heap limit, 8 GiB temporary VM swap, and a persistent bounded
   12 GiB ccache inside the VM-native `out` directory. It refuses to start with
   less than 60 GiB free on the external build volume.
 - Do not use the `lineage-fast` VirtioFS profile. Two repeatable macOS 27.0
