@@ -8,10 +8,13 @@ export COLIMA_HOME=${T65MAX_COLIMA_HOME:-$EXTERNAL_VOLUME/t65max/colima-linux-ho
 SSH_CONFIG="$COLIMA_HOME/ssh_config"
 VM_HOST="colima-$PROFILE"
 VM_DATA_ROOT=/var/lib/docker/t65max
-SWAP_GIB=${T65MAX_SWAP_GIB:-8}
-SWAP_PATH=/var/lib/docker/.t65max-build.swap
-GO_MEMORY_LIMIT=${T65MAX_GO_MEMORY_LIMIT:-12GiB}
-GO_GC=${T65MAX_GO_GC:-25}
+SWAP_GIB=${T65MAX_SWAP_GIB:-12}
+# Keep build swap on the otherwise mostly empty VM root disk. This preserves
+# the native data disk's limited free space for out/ and ccache.
+SWAP_PATH=/.t65max-build.swap
+GO_MEMORY_LIMIT=${T65MAX_GO_MEMORY_LIMIT:-16GiB}
+GO_GC=${T65MAX_GO_GC:-50}
+GO_MAX_PROCS=${T65MAX_GO_MAX_PROCS:-6}
 BUILD_TARGET=vendorbootimage
 BUILD_JOBS=${T65MAX_BUILD_JOBS:-3}
 MAX_ROUNDS=${T65MAX_MAX_ROUNDS:-50}
@@ -60,7 +63,7 @@ fi
 
 cleanup() {
     ssh -F "$SSH_CONFIG" "$VM_HOST" \
-        "sudo swapoff '$SWAP_PATH' 2>/dev/null || true; sudo rm -f '$SWAP_PATH'; sudo fstrim /var/lib/docker >/dev/null 2>&1 || true" \
+        "sudo swapoff '$SWAP_PATH' 2>/dev/null || true; sudo rm -f '$SWAP_PATH'; sudo fstrim / >/dev/null 2>&1 || true" \
         >/dev/null 2>&1 || true
 }
 trap cleanup EXIT HUP INT TERM
@@ -73,7 +76,7 @@ ssh -F "$SSH_CONFIG" "$VM_HOST" \
 
 set +e
 ssh -t -F "$SSH_CONFIG" "$VM_HOST" \
-    "env SOURCE_DIR='$VM_ROOT/source' PROJECT_DIR='$VM_ROOT/project' BUILD_JOBS='$BUILD_JOBS' MAX_ROUNDS='$MAX_ROUNDS' GOMEMLIMIT='$GO_MEMORY_LIMIT' GOGC='$GO_GC' BUILD_TARGET='$BUILD_TARGET' CCACHE_MAX_SIZE='$CCACHE_SIZE' bash '$VM_ROOT/project/lineage/build/auto-build-inner.sh'"
+    "env SOURCE_DIR='$VM_ROOT/source' PROJECT_DIR='$VM_ROOT/project' BUILD_JOBS='$BUILD_JOBS' MAX_ROUNDS='$MAX_ROUNDS' GOMEMLIMIT='$GO_MEMORY_LIMIT' GOGC='$GO_GC' GOMAXPROCS='$GO_MAX_PROCS' BUILD_TARGET='$BUILD_TARGET' CCACHE_MAX_SIZE='$CCACHE_SIZE' bash '$VM_ROOT/project/lineage/build/auto-build-inner.sh'"
 build_status=$?
 set -e
 

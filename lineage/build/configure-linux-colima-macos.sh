@@ -24,8 +24,8 @@ fi
 # No macOS directory is mounted. Android source and output live on the VM's
 # native ext4 data disk, whose sparse backing file is stored on the external SSD.
 colima start --profile "$PROFILE" \
-    --cpus 6 \
-    --memory 16 \
+    --cpus 10 \
+    --memory 18 \
     --disk 220 \
     --root-disk 20 \
     --vm-type vz \
@@ -34,4 +34,4 @@ colima start --profile "$PROFILE" \
     --mount-type sshfs
 
 docker context use "colima-$PROFILE" >/dev/null
-echo "Colima $PROFILE configured: 6 CPUs, 16 GiB RAM, native Linux storage, no host mounts."
+echo "Colima $PROFILE configured: 10 CPUs, 18 GiB RAM, native Linux storage, no host mounts."

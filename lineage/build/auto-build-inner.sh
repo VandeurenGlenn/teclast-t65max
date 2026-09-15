@@ -7,12 +7,14 @@ BUILD_JOBS=${BUILD_JOBS:-3}
 MAX_ROUNDS=${MAX_ROUNDS:-50}
 GOMEMLIMIT=${GOMEMLIMIT:-16GiB}
 GOGC=${GOGC:-50}
+GOMAXPROCS=${GOMAXPROCS:-6}
 BUILD_TARGET=${BUILD_TARGET:-vendorbootimage}
 CCACHE_MAX_SIZE=${CCACHE_MAX_SIZE:-6G}
 CCACHE_DIR=${CCACHE_DIR:-$SOURCE_DIR/out/.ccache}
+CCACHE_EXEC=${CCACHE_EXEC:-$(command -v ccache)}
 HOST_TOOL_SHIMS="$PROJECT_DIR/lineage/build/host-tools"
 PATH="$HOST_TOOL_SHIMS:$PATH"
-export GOMEMLIMIT GOGC CCACHE_DIR USE_CCACHE=1 PATH
+export GOMEMLIMIT GOGC GOMAXPROCS CCACHE_DIR CCACHE_EXEC USE_CCACHE=1 PATH
 BLOB_LIST="$PROJECT_DIR/lineage/device/teclast/t65max/proprietary-files.txt"
 AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-copy-rule-audit.tsv"
 INSTALL_AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-install-conflict-audit.tsv"
@@ -61,6 +63,8 @@ python3 "$PROJECT_DIR/lineage/build/apply-kati-install-conflicts.py" \
     --round preflight-renamed-modules
 sync_and_extract
 python3 "$PROJECT_DIR/lineage/build/apply-casefold-source-fixes.py" \
+    --source "$SOURCE_DIR"
+python3 "$PROJECT_DIR/lineage/build/apply-clang-version-compat.py" \
     --source "$SOURCE_DIR"
 python3 "$PROJECT_DIR/lineage/build/apply-soong-memory-limits.py" \
     --source "$SOURCE_DIR"

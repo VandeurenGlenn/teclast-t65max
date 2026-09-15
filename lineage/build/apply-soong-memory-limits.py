@@ -14,8 +14,14 @@ def main() -> int:
 
     path = args.source / "build/soong/ui/build/soong.go"
     text = path.read_text()
-    marker = 'for _, name := range []string{"GOMEMLIMIT", "GOGC"}'
+    marker = 'for _, name := range []string{"GOMEMLIMIT", "GOGC", "GOMAXPROCS"}'
     if marker in text:
+        return 0
+
+    legacy_marker = 'for _, name := range []string{"GOMEMLIMIT", "GOGC"}'
+    if legacy_marker in text:
+        path.write_text(text.replace(legacy_marker, marker, 1))
+        print(f"enabled bounded Go heap and CPU limit for Soong subprocesses: {path}")
         return 0
 
     anchor = "\tinvocationEnv := make(map[string]string)\n"
@@ -23,14 +29,14 @@ def main() -> int:
         raise SystemExit(f"unexpected Soong invocation environment layout: {path}")
 
     addition = anchor + (
-        '\tfor _, name := range []string{"GOMEMLIMIT", "GOGC"} {\n'
+        '\tfor _, name := range []string{"GOMEMLIMIT", "GOGC", "GOMAXPROCS"} {\n'
         "\t\tif value := os.Getenv(name); value != \"\" {\n"
         "\t\t\tinvocationEnv[name] = value\n"
         "\t\t}\n"
         "\t}\n"
     )
     path.write_text(text.replace(anchor, addition, 1))
-    print(f"enabled bounded Go heap for Soong subprocesses: {path}")
+    print(f"enabled bounded Go heap and CPU limit for Soong subprocesses: {path}")
     return 0
 
 

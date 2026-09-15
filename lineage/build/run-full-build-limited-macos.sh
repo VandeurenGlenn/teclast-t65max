@@ -3,11 +3,13 @@ set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 
-# Conservative defaults for a 24 GiB Apple Silicon Mac. Override when needed.
-: "${T65MAX_BUILD_JOBS:=3}"
-: "${T65MAX_SWAP_GIB:=8}"
-: "${T65MAX_GO_MEMORY_LIMIT:=12GiB}"
-: "${T65MAX_GO_GC:=25}"
+# Tuned for the 18 GiB build VM: enough virtual memory for Soong's live graph,
+# while retaining the incremental out/ and ccache trees.
+: "${T65MAX_BUILD_JOBS:=10}"
+: "${T65MAX_SWAP_GIB:=12}"
+: "${T65MAX_GO_MEMORY_LIMIT:=16GiB}"
+: "${T65MAX_GO_GC:=50}"
+: "${T65MAX_GO_MAX_PROCS:=6}"
 : "${T65MAX_CCACHE_SIZE:=12G}"
 
 BUILD_VOLUME=${T65MAX_BUILD_VOLUME:-/Volumes/LineageBuild}
@@ -24,6 +26,7 @@ exec env \
     T65MAX_SWAP_GIB="$T65MAX_SWAP_GIB" \
     T65MAX_GO_MEMORY_LIMIT="$T65MAX_GO_MEMORY_LIMIT" \
     T65MAX_GO_GC="$T65MAX_GO_GC" \
+    T65MAX_GO_MAX_PROCS="$T65MAX_GO_MAX_PROCS" \
     "$PROJECT_DIR/lineage/build/run-auto-build-linux-macos.sh" \
     --target bacon \
     --jobs "$T65MAX_BUILD_JOBS" \
