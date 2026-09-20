@@ -7,7 +7,12 @@ PROFILE=${COLIMA_PROFILE:-lineage-linux}
 export COLIMA_HOME=${T65MAX_COLIMA_HOME:-$EXTERNAL_VOLUME/t65max/colima-linux-home}
 SSH_CONFIG="$COLIMA_HOME/ssh_config"
 VM_HOST="colima-$PROFILE"
+if [ ! -s "$SSH_CONFIG" ]; then
+    SSH_CONFIG="$COLIMA_HOME/_lima/colima-$PROFILE/ssh.config"
+    VM_HOST="lima-colima-$PROFILE"
+fi
 VM_DATA_ROOT=/var/lib/docker/t65max
+VM_OUT_ROOT=/mnt/lima-t65max-out/out
 SWAP_GIB=${T65MAX_SWAP_GIB:-12}
 # Keep build swap on the otherwise mostly empty VM root disk. This preserves
 # the native data disk's limited free space for out/ and ccache.
@@ -30,7 +35,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if ! colima status --profile "$PROFILE" >/dev/null 2>&1; then
+if [ ! -s "$SSH_CONFIG" ] || ! ssh -F "$SSH_CONFIG" "$VM_HOST" true >/dev/null 2>&1; then
     echo "Linux build VM is stopped. Run ./lineage/build/configure-linux-colima-macos.sh first." >&2
     exit 5
 fi
@@ -46,7 +51,14 @@ if ! ssh -F "$SSH_CONFIG" "$VM_HOST" test -f "$VM_ROOT/source/build/envsetup.sh"
     exit 6
 fi
 
-if ! ssh -F "$SSH_CONFIG" "$VM_HOST" 'test -x /lib64/ld-linux-x86-64.so.2 && command -v ccache >/dev/null && command -v java >/dev/null'; then
+if ! ssh -F "$SSH_CONFIG" "$VM_HOST" \
+    "test -d '$VM_OUT_ROOT' && test \"\$(readlink -f '$VM_ROOT/source/out')\" = '$VM_OUT_ROOT'"; then
+    echo "Internal ext4 out disk is not mounted at $VM_OUT_ROOT; build not started." >&2
+    echo "Reattach the t65max-out Lima disk before continuing." >&2
+    exit 9
+fi
+
+if ! ssh -F "$SSH_CONFIG" "$VM_HOST" 'test -x /lib64/ld-linux-x86-64.so.2 && command -v ccache >/dev/null && command -v java >/dev/null && command -v xxd >/dev/null'; then
     echo "Linux build tools are unavailable. Run ./lineage/build/provision-direct-linux-build-macos.sh first." >&2
     exit 7
 fi
@@ -61,12 +73,11 @@ if ssh -F "$SSH_CONFIG" "$VM_HOST" pgrep -f '[a]uto-build-inner.sh' >/dev/null; 
     exit 8
 fi
 
-cleanup() {
-    ssh -F "$SSH_CONFIG" "$VM_HOST" \
-        "sudo swapoff '$SWAP_PATH' 2>/dev/null || true; sudo rm -f '$SWAP_PATH'; sudo fstrim / >/dev/null 2>&1 || true" \
-        >/dev/null 2>&1 || true
-}
-trap cleanup EXIT HUP INT TERM
+# Keep the build swap active for the VM lifetime. A host-side SSH interruption
+# does not guarantee that the remote Ninja process has stopped; running
+# swapoff from an EXIT trap can therefore exhaust RAM and make the guest OOM
+# killer terminate the still-running build. The next build reuses this file,
+# and a VM restart deactivates it before the inactive file is recreated.
 ssh -F "$SSH_CONFIG" "$VM_HOST" \
     "if sudo swapon --noheadings --show=NAME | grep -Fxq '$SWAP_PATH'; then echo 'reusing active build swap'; else sudo rm -f '$SWAP_PATH' && sudo fallocate -l '${SWAP_GIB}G' '$SWAP_PATH' && sudo chmod 600 '$SWAP_PATH' && sudo mkswap '$SWAP_PATH' >/dev/null && sudo swapon '$SWAP_PATH'; fi"
 

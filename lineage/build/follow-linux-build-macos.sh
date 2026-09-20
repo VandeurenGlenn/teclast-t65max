@@ -49,6 +49,10 @@ PROFILE=${COLIMA_PROFILE:-lineage-linux}
 export COLIMA_HOME=${T65MAX_COLIMA_HOME:-$EXTERNAL_VOLUME/t65max/colima-linux-home}
 SSH_CONFIG="$COLIMA_HOME/ssh_config"
 VM_HOST="colima-$PROFILE"
+if [ ! -s "$SSH_CONFIG" ]; then
+    SSH_CONFIG="$COLIMA_HOME/_lima/colima-$PROFILE/ssh.config"
+    VM_HOST="lima-colima-$PROFILE"
+fi
 VM_HOME=$(ssh -F "$SSH_CONFIG" "$VM_HOST" 'printf %s "$HOME"')
 REMOTE_BUILD_DIR="$VM_HOME/t65max/project/lineage/build"
 

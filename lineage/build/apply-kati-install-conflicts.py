@@ -155,9 +155,15 @@ def main() -> int:
                 continue
             prefix, src, dst, extras = parsed
             newline = "\n" if line.endswith("\n") else ""
-            if dst in rename_destinations and "MAKE_COPY_RULE_ONLY" in extras:
-                extras = re.sub(r";MAKE_COPY_RULE_ONLY(?=;|\||$)", "", extras)
-                changes.append(("generate-renamed-prebuilt", src, dst))
+            original_extras = extras
+            if dst in rename_destinations:
+                if "MAKE_COPY_RULE_ONLY" in extras:
+                    extras = re.sub(r";MAKE_COPY_RULE_ONLY(?=;|\||$)", "", extras)
+                    changes.append(("generate-renamed-prebuilt", src, dst))
+                if "FIX_SONAME" not in extras:
+                    extras += ";FIX_SONAME"
+                    changes.append(("fix-renamed-soname", src, dst))
+            if extras != original_extras:
                 output.append(f"{prefix}{src}:{dst}{extras}{newline}")
             else:
                 output.append(line)
@@ -242,6 +248,8 @@ def main() -> int:
         if destination:
             extras = re.sub(r";MODULE_SUFFIX=_vendor(?=;|\||$)", "", extras)
             extras = re.sub(r";MAKE_COPY_RULE_ONLY(?=;|\||$)", "", extras)
+            if "FIX_SONAME" not in extras:
+                extras += ";FIX_SONAME"
             output.append(f"{prefix}{src}:{destination}{extras}{newline}")
             changes.append(("rename-stock-abi", src, destination))
             continue

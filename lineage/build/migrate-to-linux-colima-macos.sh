@@ -8,6 +8,10 @@ export COLIMA_HOME=${T65MAX_COLIMA_HOME:-$EXTERNAL_VOLUME/t65max/colima-linux-ho
 SOURCE_DIR="$EXTERNAL_VOLUME/t65max/source"
 SSH_CONFIG="$COLIMA_HOME/ssh_config"
 VM_HOST="colima-$PROFILE"
+if [ ! -s "$SSH_CONFIG" ]; then
+    SSH_CONFIG="$COLIMA_HOME/_lima/colima-$PROFILE/ssh.config"
+    VM_HOST="lima-colima-$PROFILE"
+fi
 VM_DATA_ROOT=/var/lib/docker/t65max
 MIGRATION_DIR="$EXTERNAL_VOLUME/t65max/colima-migration"
 OUT_ARCHIVE="$MIGRATION_DIR/t65max-lineage-out.tar"

@@ -6,6 +6,10 @@ PROFILE=${COLIMA_PROFILE:-lineage-linux}
 export COLIMA_HOME=${T65MAX_COLIMA_HOME:-$EXTERNAL_VOLUME/t65max/colima-linux-home}
 SSH_CONFIG="$COLIMA_HOME/ssh_config"
 VM_HOST="colima-$PROFILE"
+if [ ! -s "$SSH_CONFIG" ]; then
+    SSH_CONFIG="$COLIMA_HOME/_lima/colima-$PROFILE/ssh.config"
+    VM_HOST="lima-colima-$PROFILE"
+fi
 
 # Package installation is the only privileged part. Android itself is built by
 # the ordinary Lima user on the VM-native ext4 filesystem.
@@ -34,11 +38,11 @@ ssh -t -F "$SSH_CONFIG" "$VM_HOST" '
         bc bison build-essential ccache curl file flex git git-lfs gnupg gperf \
         imagemagick libelf-dev liblz4-tool libssl-dev libxml2-utils lzop \
         openjdk-17-jdk-headless pngcrush protobuf-compiler python-is-python3 \
-        rsync schedtool squashfs-tools unzip xsltproc xz-utils zip zlib1g-dev \
+        rsync schedtool squashfs-tools unzip xxd xsltproc xz-utils zip zlib1g-dev \
         libc6:amd64 libgcc-s1:amd64 libstdc++6:amd64 zlib1g:amd64 \
         libncurses6:amd64 libtinfo6:amd64
     sudo apt-get clean
 '
 
-ssh -F "$SSH_CONFIG" "$VM_HOST" 'test -x /lib64/ld-linux-x86-64.so.2 && command -v ccache >/dev/null && command -v java >/dev/null'
+ssh -F "$SSH_CONFIG" "$VM_HOST" 'test -x /lib64/ld-linux-x86-64.so.2 && command -v ccache >/dev/null && command -v java >/dev/null && command -v xxd >/dev/null'
 echo "Direct Linux build environment is ready."

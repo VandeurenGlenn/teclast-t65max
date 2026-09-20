@@ -143,6 +143,18 @@ blob_fixups: blob_fixups_user_type = {
             "android.hardware.gnss-V1-ndk.so",
         ),
     (
+        "vendor/lib64/mt6789/lib3a.ae.stat.so",
+        "vendor/lib64/mt6789/lib3a.flash.so",
+        "vendor/lib64/mt6789/lib3a.sensors.color.so",
+        "vendor/lib64/mt6789/lib3a.sensors.flicker.so",
+    ): blob_fixup()
+        .add_needed("liblog.so"),
+    (
+        "vendor/lib64/mt6789/libmnl.so",
+        "vendor/lib64/libmtk-ril.so",
+    ): blob_fixup()
+        .add_needed("libcutils.so"),
+    (
         "vendor/bin/hw/vendor.mediatek.hardware.mtkpower@1.0-service",
         "vendor/lib64/android.hardware.power-service-mediatek.so",
     ): blob_fixup()

@@ -77,10 +77,20 @@ suspend require on-device validation before being considered complete.
   and trims the disk so APFS can reclaim host space. Docker is not in the build
   path.
 - For a complete flashable LineageOS package, use
-  `build/run-full-build-limited-macos.sh`. It builds `bacon` with three jobs,
-  a 12 GiB Go heap limit, 8 GiB temporary VM swap, and a persistent bounded
-  12 GiB ccache inside the VM-native `out` directory. It refuses to start with
-  less than 60 GiB free on the external build volume.
+  `build/run-full-build-limited-macos.sh`. It builds `bacon` with ten jobs,
+  a 16 GiB Go heap limit, six Soong Go workers, 12 GiB temporary VM swap, and
+  a persistent bounded 12 GiB ccache inside the VM-native `out` directory. It
+  refuses to start with less than 60 GiB free on the external build volume.
+- The incremental `out/` tree, including the 12 GiB bounded ccache, lives on
+  the separate 100 GiB ext4 Lima disk `t65max-out`. Its sparse backing file is
+  on the internal SSD under
+  `~/Library/Application Support/T65MaxLineage/lima/_disks/t65max-out`; the
+  external Lima disk registry contains only a symlink to it. Inside the VM it
+  mounts at `/mnt/lima-t65max-out`, and the source checkout's `out` is a symlink
+  to `/mnt/lima-t65max-out/out`. The build preflight refuses to continue if
+  that mount or symlink is absent, preventing accidental cache recreation on
+  the nearly full external data disk. The Colima configuration helper restores
+  the extra-disk attachment idempotently if Colima regenerates `lima.yaml`.
 - Do not use the `lineage-fast` VirtioFS profile. Two repeatable macOS 27.0
   panics occurred while its VZ VM accessed the external USB source tree: first
   `watchdogd` and then `launchd` exited with signal 10, with a VirtioFS thread
@@ -99,6 +109,46 @@ suspend require on-device validation before being considered complete.
   The direct-build preflight shadows only `uname -m` as `x86_64`, causing the
   AOSP bootstrap to select the supplied host tools without falsifying other
   kernel information or changing the ARM64 device target.
+- During the first full compile after Soong/Kati, Rosetta failed two concurrent
+  Clang processes with `Failed to map AOT header: 12` while both the guest
+  journal and macOS reported memory pressure. Treat this exact errno-12 case
+  as transient host-memory exhaustion. The build loop now reuses the existing
+  Ninja graph at six jobs (then four if necessary) and resets only Rosetta's
+  reproducible `.aotcache`/`.flu` translation files. It does this only when no
+  Android.bp, Android.mk, or make fragment is newer than that graph. Other
+  failures and graph changes continue through the full correctness path.
+- The complete host-tool provisioning includes Ubuntu's `xxd` package. ADB's
+  `bin2c_fastdeployagentscript` genrule invokes it directly. After repairing
+  this exact missing-tool failure, the guarded fast path may reuse the existing
+  Ninja graph because installing a host executable does not change that graph.
+- The verified A8D4 kernel has `CONFIG_IKHEADERS=y`. Its exact embedded header
+  archive is extracted from the checked A8D4 `Image.gz`, sanitized with
+  Bionic's own header tool, and packaged behind the minimal
+  `t65max-kernel-a8d4/kernel-headers` `headers_install` shim. This satisfies
+  Lineage's generated kernel-header edge without mixing another device's
+  kernel headers or pretending that a buildable kernel source tree exists.
+  On the ARM64 VM, Lineage's final `clean_headers.sh` step must invoke Bionics
+  sanitizer with AOSP's x86_64 Python, matching the supplied x86_64 libclang;
+  the build preflight applies that host-compatibility patch idempotently.
+- Keep `/.t65max-build.swap` active for the lifetime of the Linux VM. Never
+  run `swapoff` from a host-side build cleanup trap: an SSH disconnect can
+  leave Ninja running remotely, and the resulting swap evacuation caused the
+  guest OOM killer to terminate Ninja on 2026-09-17.
+- Every stock shared library deliberately installed under an `_vendor.so`
+  destination must carry the proprietary-files `FIX_SONAME` argument. Its
+  proprietary callers already receive matching `DT_NEEDED` rewrites; leaving
+  the original SONAME causes Soong's ELF check to reject the renamed prebuilt.
+- The A8D4 camera-3A `lib3a.ae.stat`, `lib3a.flash`,
+  `lib3a.sensors.color`, and `lib3a.sensors.flicker` blobs directly import
+  Android logging symbols without declaring `liblog.so`. Add that explicit
+  `DT_NEEDED` during extraction; do not conceal the ABI defect with
+  `allow_undefined_symbols`.
+- Do not retain the A8D4 32/64-bit `libcodec2_hidl_plugin.so` prebuilts. They
+  shadow Lineage 23.2's same-named source module, do not export its build-time
+  headers, and lack the newer `FilterWrapper::getParamReflector()` ABI needed
+  by the current HIDL utilities. No retained proprietary ELF has a direct
+  `DT_NEEDED` edge to this plugin. Use Lineage's source-built plugin so its
+  implementation and exported headers remain revision-coherent.
 - The former case-insensitive checkout lost some tracked case-colliding files.
   After explicit destructive-reset authorization, the VM checkout was restored
   locally to its manifest revisions without touching `out` or ccache. The 6.8
@@ -159,6 +209,11 @@ suspend require on-device validation before being considered complete.
   Renamed ABI libraries must be generated as normal prebuilt Soong modules;
   do not retain `MAKE_COPY_RULE_ONLY` on those entries, because patched
   proprietary `DT_NEEDED` edges require resolvable `_vendor` module names.
+- The A8D4 `vendor/lib64/mt6789/libmnl.so` and
+  `vendor/lib64/libmtk-ril.so` import the legacy libcutils
+  `property_get`/`property_set` API without declaring `libcutils.so`.
+  Add that dependency during extraction; a complete proprietary-ELF scan
+  found no other blob with the same missing dependency.
 - Use the source-built `android.system.wifi.keystore@1.0` HIDL interface
   library; retain and validate the proprietary `libkeystore-wifi-hidl.so`
   consumer.
