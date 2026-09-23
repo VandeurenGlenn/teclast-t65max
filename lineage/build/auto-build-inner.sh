@@ -10,12 +10,16 @@ GOGC=${GOGC:-50}
 GOMAXPROCS=${GOMAXPROCS:-6}
 BUILD_TARGET=${BUILD_TARGET:-vendorbootimage}
 CCACHE_MAX_SIZE=${CCACHE_MAX_SIZE:-6G}
-CCACHE_DIR=${CCACHE_DIR:-$SOURCE_DIR/out/.ccache}
+# Keep ccache on the VM's external-data-backed ext4 disk. The large Android
+# out tree stays on the faster internal sparse disk, while reusable compiler
+# objects no longer consume its scarce host allocation.
+CCACHE_DIR=${CCACHE_DIR:-$SOURCE_DIR/../ccache}
 CCACHE_EXEC=${CCACHE_EXEC:-$(command -v ccache)}
 ROSETTA_RETRY_JOBS=${ROSETTA_RETRY_JOBS:-6}
+OUT_DIR=${OUT_DIR:-out}
 HOST_TOOL_SHIMS="$PROJECT_DIR/lineage/build/host-tools"
 PATH="$HOST_TOOL_SHIMS:$PATH"
-export GOMEMLIMIT GOGC GOMAXPROCS CCACHE_DIR CCACHE_EXEC USE_CCACHE=1 PATH
+export GOMEMLIMIT GOGC GOMAXPROCS CCACHE_DIR CCACHE_EXEC USE_CCACHE=1 OUT_DIR PATH
 BLOB_LIST="$PROJECT_DIR/lineage/device/teclast/t65max/proprietary-files.txt"
 AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-copy-rule-audit.tsv"
 INSTALL_AUDIT_LOG="$PROJECT_DIR/lineage-build/auto-install-conflict-audit.tsv"
@@ -34,7 +38,52 @@ reset_rosetta_translation_cache() {
         find "$HOME/.cache/rosetta" -maxdepth 1 -type f -name '*.flu' -delete
     fi
     sudo systemctl reset-failed rosettad || true
-    sudo systemctl start rosettad
+    # Keep the optional AOT daemon disabled.  Its cached translations are not
+    # required by the kernel Rosetta handler, and restarting it has caused
+    # reproducible Translator.cpp/signapk crashes in this VM.
+    echo "Rosetta translation cache cleared; AOT cache remains disabled"
+}
+
+disable_rosetta_aot_cache() {
+    # Rosetta's optional AOT daemon occasionally aborts while translating the
+    # x86_64 Android JDK (Translator.cpp assertions).  The kernel Rosetta
+    # handler keeps working without this cache; only translations are no
+    # longer persisted.  Keep Ninja/Soong outputs and ccache untouched.
+    sudo systemctl stop rosettad || true
+    echo "Rosetta AOT cache disabled; using stable on-demand x86 translation"
+}
+
+is_silent_transient_clang_failure() {
+    local log_path=$1
+    # Rosetta can occasionally return a failing status from an x86_64 clang
+    # process without writing a diagnostic.  Treat only that narrow shape as
+    # transient: a FAILED edge, an Android prebuilt clang command after it,
+    # and no actual compiler/runtime diagnostic.  Retries are bounded below.
+    awk '
+        /^FAILED: / { after_failed = 1 }
+        after_failed && /prebuilts\/clang\/host\/linux-x86\/.*\/clang(\+\+)? / {
+            saw_clang = 1
+        }
+        after_failed && /(rosetta error:|Bus error|Killed|fatal error:|error: |Cannot allocate|No space left|Input\/output error|Segmentation fault|LLVM ERROR)/ {
+            saw_diagnostic = 1
+        }
+        END { exit !(after_failed && saw_clang && !saw_diagnostic) }
+    ' "$log_path"
+}
+
+soong_atomic_outputs_share_filesystem() {
+    local sandbox_root="$SOURCE_DIR/out/soong/.temp"
+    local generated_external="$SOURCE_DIR/out/soong/.intermediates/external"
+    [[ ! -e "$sandbox_root" || ! -e "$generated_external" ]] \
+        || [[ "$(stat -c %d "$sandbox_root")" == "$(stat -c %d "$generated_external")" ]]
+}
+
+require_soong_atomic_output_layout() {
+    if ! soong_atomic_outputs_share_filesystem; then
+        echo "Soong sandbox and generated external outputs are on different filesystems." >&2
+        echo "Keep out/soong/.temp and out/soong/.intermediates/external on the same ext4 disk." >&2
+        exit 4
+    fi
 }
 
 extract_inputs_fingerprint() {
@@ -72,6 +121,7 @@ sync_and_extract() {
 }
 
 mkdir -p "$LOG_DIR"
+require_soong_atomic_output_layout
 python3 "$PROJECT_DIR/lineage/build/apply-kati-install-conflicts.py" \
     --normalize-renames \
     --blob-list "$BLOB_LIST" \
@@ -109,8 +159,46 @@ current_build_jobs=$BUILD_JOBS
 latest_log=$(ls -1t "$LOG_DIR"/round-*.log 2>/dev/null | head -1 || true)
 recoverable_previous_failure=false
 soname_binary_recovery=false
+lower_resume_jobs=false
+disable_rosetta_aot_for_resume=false
 if [[ -n "$latest_log" ]]; then
-    if grep -Fq 'rosetta error: Failed to map AOT header: 12' "$latest_log"; then
+    if grep -Fq 'signapk.jar' "$latest_log" \
+        && grep -Fq 'Bus error' "$latest_log"; then
+        # The generated graph and signing inputs are valid.  Rosetta's AOT
+        # daemon can crash on the x86_64 JDK while ordinary x86 tools remain
+        # healthy; on-demand translation avoids that host-only failure.
+        recoverable_previous_failure=true
+        disable_rosetta_aot_for_resume=true
+    elif grep -Fq 'rosetta error: Failed to map AOT header: 12' "$latest_log"; then
+        recoverable_previous_failure=true
+        lower_resume_jobs=true
+    elif is_silent_transient_clang_failure "$latest_log"; then
+        recoverable_previous_failure=true
+        lower_resume_jobs=true
+        disable_rosetta_aot_for_resume=true
+    elif grep -Fq 'error: action cancelled when ninja exited' "$latest_log"; then
+        # A deliberate SIGINT used for host-storage maintenance leaves all
+        # completed outputs and the generated graph valid.
+        recoverable_previous_failure=true
+    elif grep -Fq 'header-abi-dumper' "$latest_log" \
+        && grep -Fq 'Duplicate root dir:' "$latest_log"; then
+        # Direct Ninja needs OUT_DIR exported for the literal
+        # "--root-dir $OUT_DIR:out" command embedded in the graph. Missing
+        # it changes that argument to ":out"; no source or output is bad.
+        recoverable_previous_failure=true
+    elif grep -Fq 'invalid cross-device link' "$latest_log" \
+        && soong_atomic_outputs_share_filesystem; then
+        # sbox completed the generator but could not atomically rename its
+        # output across the manually split out filesystems. Once both paths
+        # are colocated, the generated graph and all other outputs are valid.
+        recoverable_previous_failure=true
+    elif grep -Fq 'Cannot override existing value 31.0 with BOARD_SEPOLICY_VERS' \
+        "$latest_log" \
+        && ! grep -Fq '<sepolicy>' \
+            "$SOURCE_DIR/device/teclast/t65max/configs/vintf/manifest.xml"; then
+        # The stock merged manifest carried its resolved policy version, but
+        # Lineage's assemble_vintf injects BOARD_SEPOLICY_VERS into this input.
+        # Removing the duplicate value changes only this declared Ninja input.
         recoverable_previous_failure=true
     elif grep -Fq 'xxd: command not found' "$latest_log" \
         && command -v xxd >/dev/null; then
@@ -165,8 +253,9 @@ if $recoverable_previous_failure \
             -newer "$NINJA_GRAPH" -print -quit)
     fi
     if [[ -z "$newer_definition" ]]; then
+        $disable_rosetta_aot_for_resume && disable_rosetta_aot_cache
         resume_ninja=true
-        (( current_build_jobs > ROSETTA_RETRY_JOBS )) \
+        $lower_resume_jobs && (( current_build_jobs > ROSETTA_RETRY_JOBS )) \
             && current_build_jobs=$ROSETTA_RETRY_JOBS
         echo "guarded fast resume: reusing Ninja graph with -j$current_build_jobs"
     else
@@ -197,6 +286,24 @@ for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
         exit 0
     fi
 
+    if grep -Fq 'signapk.jar' "$log_path" \
+        && grep -Fq 'Bus error' "$log_path"; then
+        if systemctl is-active --quiet rosettad; then
+            disable_rosetta_aot_cache
+        elif (( current_build_jobs > 4 )); then
+            # A second failure without AOT caching points to translation
+            # pressure rather than the known daemon assertion.
+            current_build_jobs=4
+        else
+            echo "signapk still crashes with Rosetta AOT disabled at -j$current_build_jobs; stopping." >&2
+            tail -n 30 "$log_path" >&2
+            exit "$build_status"
+        fi
+        resume_ninja=true
+        echo "signapk Rosetta crash detected; retrying the same Ninja graph with -j$current_build_jobs"
+        continue
+    fi
+
     if grep -Fq 'rosetta error: Failed to map AOT header: 12' "$log_path"; then
         if (( current_build_jobs > ROSETTA_RETRY_JOBS )); then
             current_build_jobs=$ROSETTA_RETRY_JOBS
@@ -210,6 +317,22 @@ for ((round_number = 1; round_number <= MAX_ROUNDS; round_number++)); do
         reset_rosetta_translation_cache
         resume_ninja=true
         echo "Rosetta ENOMEM detected; cache reset, retrying the same Ninja graph with -j$current_build_jobs"
+        continue
+    fi
+
+    if is_silent_transient_clang_failure "$log_path"; then
+        if (( current_build_jobs > ROSETTA_RETRY_JOBS )); then
+            current_build_jobs=$ROSETTA_RETRY_JOBS
+        elif (( current_build_jobs > 4 )); then
+            current_build_jobs=4
+        else
+            echo "Silent Rosetta clang failure persisted at -j$current_build_jobs; stopping." >&2
+            tail -n 30 "$log_path" >&2
+            exit "$build_status"
+        fi
+        disable_rosetta_aot_cache
+        resume_ninja=true
+        echo "Silent Rosetta clang failure detected; retrying the same Ninja graph with -j$current_build_jobs"
         continue
     fi
 

@@ -24,6 +24,7 @@ AB_OTA_PARTITIONS := \
     vbmeta_vendor
 
 PRODUCT_PACKAGES += \
+    libt65max_libbase_compat \
     android.hardware.boot-service.default_recovery \
     fastbootd \
     FrameworkResOverlay \

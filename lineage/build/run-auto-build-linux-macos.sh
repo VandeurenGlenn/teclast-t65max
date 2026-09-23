@@ -85,13 +85,12 @@ ssh -F "$SSH_CONFIG" "$VM_HOST" \
 ssh -F "$SSH_CONFIG" "$VM_HOST" \
     "sudo systemctl stop docker.service docker.socket 2>/dev/null || true"
 
-set +e
-ssh -t -F "$SSH_CONFIG" "$VM_HOST" \
-    "env SOURCE_DIR='$VM_ROOT/source' PROJECT_DIR='$VM_ROOT/project' BUILD_JOBS='$BUILD_JOBS' MAX_ROUNDS='$MAX_ROUNDS' GOMEMLIMIT='$GO_MEMORY_LIMIT' GOGC='$GO_GC' GOMAXPROCS='$GO_MAX_PROCS' BUILD_TARGET='$BUILD_TARGET' CCACHE_MAX_SIZE='$CCACHE_SIZE' bash '$VM_ROOT/project/lineage/build/auto-build-inner.sh'"
-build_status=$?
-set -e
+# Run outside the SSH session. A sleeping Mac, closed Terminal, lost cable or
+# monitor disconnect must not send SIGHUP to Ninja and waste completed work.
+REMOTE_LAUNCH_LOG="$VM_ROOT/project/lineage-build/logs/detached-build.log"
+REMOTE_PID_FILE="$VM_ROOT/project/lineage-build/logs/detached-build.pid"
+ssh -T -F "$SSH_CONFIG" "$VM_HOST" \
+    "nohup setsid env SOURCE_DIR='$VM_ROOT/source' PROJECT_DIR='$VM_ROOT/project' BUILD_JOBS='$BUILD_JOBS' MAX_ROUNDS='$MAX_ROUNDS' GOMEMLIMIT='$GO_MEMORY_LIMIT' GOGC='$GO_GC' GOMAXPROCS='$GO_MAX_PROCS' BUILD_TARGET='$BUILD_TARGET' CCACHE_MAX_SIZE='$CCACHE_SIZE' bash '$VM_ROOT/project/lineage/build/auto-build-inner.sh' </dev/null >'$REMOTE_LAUNCH_LOG' 2>&1 & printf '%s\n' \$! >'$REMOTE_PID_FILE'"
 
-mkdir -p "$PROJECT_DIR/lineage-build/logs"
-rsync -a -e "ssh -F $SSH_CONFIG" \
-    "$VM_HOST:$VM_ROOT/project/lineage-build/logs/" "$PROJECT_DIR/lineage-build/logs/" || true
-exit "$build_status"
+echo "LineageOS build detached in the VM; SSH disconnects can no longer stop it."
+echo "Follow it with: ./lineage/build/follow-linux-build-macos.sh"

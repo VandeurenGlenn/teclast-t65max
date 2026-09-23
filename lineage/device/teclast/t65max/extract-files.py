@@ -6,22 +6,14 @@ from extract_utils.fixups_lib import lib_fixups
 from extract_utils.main import ExtractUtils, ExtractUtilsModule
 
 
-blob_fixups: blob_fixups_user_type = {
-    "vendor/bin/hw/android.hardware.lights-service.mediatek": blob_fixup()
-        .replace_needed(
-            "android.hardware.light-V1-ndk_platform.so",
-            "android.hardware.light-V1-ndk.so",
-        ),
-    "vendor/bin/hw/android.hardware.memtrack-service.mediatek": blob_fixup()
-        .replace_needed(
-            "android.hardware.memtrack-V1-ndk_platform.so",
-            "android.hardware.memtrack-V1-ndk.so",
-        ),
-    (
-        "vendor/bin/hw/android.hardware.security.keymint-service.trustkernel",
-        "vendor/lib64/lib_android_keymaster_keymint_utils_vendor.so",
-        "vendor/lib64/libkeymint_vendor.so",
-    ): blob_fixup()
+def keymint_blob_fixup(needs_rkp: bool = False):
+    fixup = blob_fixup()
+    if needs_rkp:
+        # Android U moved IRemotelyProvisionedComponent from KeyMint into
+        # android.hardware.security.rkp without changing its C++ ABI. These
+        # two A8D4 TrustKernel binaries import the old class symbols directly.
+        fixup = fixup.add_needed("android.hardware.security.rkp-V3-ndk.so")
+    return (fixup
         .replace_needed(
             "android.hardware.security.keymint-V1-ndk_platform.so",
             "android.hardware.security.keymint-V1-ndk.so",
@@ -38,34 +30,31 @@ blob_fixups: blob_fixups_user_type = {
             "lib_android_keymaster_keymint_utils.so",
             "lib_android_keymaster_keymint_utils_vendor.so",
         )
+        .replace_needed("libkeymint.so", "libkeymint_vendor.so")
+        .replace_needed("libcppbor_external.so", "libcppbor_external_vendor.so")
+        .replace_needed("libcppcose_rkp.so", "libcppcose_rkp_vendor.so")
+        .replace_needed("libkeymaster_messages.so", "libkeymaster_messages_vendor.so")
+        .replace_needed("libkeymaster_portable.so", "libkeymaster_portable_vendor.so")
+        .replace_needed("libpuresoftkeymasterdevice.so", "libpuresoftkeymasterdevice_vendor.so")
+        .replace_needed("libsoft_attestation_cert.so", "libsoft_attestation_cert_vendor.so"))
+
+
+blob_fixups: blob_fixups_user_type = {
+    "vendor/bin/hw/android.hardware.lights-service.mediatek": blob_fixup()
         .replace_needed(
-            "libkeymint.so",
-            "libkeymint_vendor.so",
-        )
-        .replace_needed(
-            "libcppbor_external.so",
-            "libcppbor_external_vendor.so",
-        )
-        .replace_needed(
-            "libcppcose_rkp.so",
-            "libcppcose_rkp_vendor.so",
-        )
-        .replace_needed(
-            "libkeymaster_messages.so",
-            "libkeymaster_messages_vendor.so",
-        )
-        .replace_needed(
-            "libkeymaster_portable.so",
-            "libkeymaster_portable_vendor.so",
-        )
-        .replace_needed(
-            "libpuresoftkeymasterdevice.so",
-            "libpuresoftkeymasterdevice_vendor.so",
-        )
-        .replace_needed(
-            "libsoft_attestation_cert.so",
-            "libsoft_attestation_cert_vendor.so",
+            "android.hardware.light-V1-ndk_platform.so",
+            "android.hardware.light-V1-ndk.so",
         ),
+    "vendor/bin/hw/android.hardware.memtrack-service.mediatek": blob_fixup()
+        .replace_needed(
+            "android.hardware.memtrack-V1-ndk_platform.so",
+            "android.hardware.memtrack-V1-ndk.so",
+        ),
+    (
+        "vendor/bin/hw/android.hardware.security.keymint-service.trustkernel",
+        "vendor/lib64/libkeymint_vendor.so",
+    ): keymint_blob_fixup(needs_rkp=True),
+    "vendor/lib64/lib_android_keymaster_keymint_utils_vendor.so": keymint_blob_fixup(),
     (
         "vendor/lib64/libcppbor_external_vendor.so",
         "vendor/lib64/libcppcose_rkp_vendor.so",
@@ -154,6 +143,16 @@ blob_fixups: blob_fixups_user_type = {
         "vendor/lib64/libmtk-ril.so",
     ): blob_fixup()
         .add_needed("libcutils.so"),
+    (
+        "vendor/bin/hw/android.hardware.sensors@2.0-service.multihal-mediatek",
+        "vendor/bin/hw/android.hardware.usb@1.2-service-mediatekv2",
+        "vendor/lib/libavservices_minijail_vendor.so",
+        "vendor/lib64/libavservices_minijail_vendor.so",
+        "vendor/lib64/libsysenv.so",
+        "vendor/lib64/libnvram.so",
+        "vendor/lib64/hw/android.hardware.boot@1.0-impl-1.2-mtkimpl.so",
+    ): blob_fixup()
+        .add_needed("libt65max_libbase_compat.so"),
     (
         "vendor/bin/hw/vendor.mediatek.hardware.mtkpower@1.0-service",
         "vendor/lib64/android.hardware.power-service-mediatek.so",

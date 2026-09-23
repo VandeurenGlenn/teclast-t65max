@@ -158,5 +158,5 @@ REMOTE
 
 mkdir -p "$PROJECT_DIR/lineage-build/logs/auto-build-single"
 rsync -a -e "ssh -F $SSH_CONFIG" \
-    "$VM_HOST:$VM_HOME/t65max/project/lineage-build/logs/auto-build-single/build-times.tsv" \
+    "$VM_HOST:$VM_HOME/t65max/project/lineage-build/logs/auto-build-single/" \
     "$PROJECT_DIR/lineage-build/logs/auto-build-single/" 2>/dev/null || true

@@ -55,6 +55,11 @@ suspend require on-device validation before being considered complete.
   Renaming only the modules still collides at the installed filename; using
   distinct sonames avoids that Kati collision and prevents the Android 15
   blobs from loading Android 16's incompatible source implementation.
+- Android U split `IRemotelyProvisionedComponent` out of the KeyMint AIDL
+  library into `android.hardware.security.rkp` while preserving its C++ ABI.
+  The A8D4 TrustKernel KeyMint service and `libkeymint_vendor.so` directly
+  import that class, so extraction adds `android.hardware.security.rkp-V3-ndk.so`
+  only to those two ELF files. Keep normal ELF checking enabled.
 - The Linux Clang sparse checkout needs `clang-stable` in addition to the
   release compiler. For this local BP4A tree the Trusty dirgroup is pointed at
   the available `clang-r563880c`; downloading the unused historical compiler
@@ -79,10 +84,10 @@ suspend require on-device validation before being considered complete.
 - For a complete flashable LineageOS package, use
   `build/run-full-build-limited-macos.sh`. It builds `bacon` with ten jobs,
   a 16 GiB Go heap limit, six Soong Go workers, 12 GiB temporary VM swap, and
-  a persistent bounded 12 GiB ccache inside the VM-native `out` directory. It
+  a persistent bounded 12 GiB ccache on the VM's external-data disk. It
   refuses to start with less than 60 GiB free on the external build volume.
-- The incremental `out/` tree, including the 12 GiB bounded ccache, lives on
-  the separate 100 GiB ext4 Lima disk `t65max-out`. Its sparse backing file is
+- The incremental `out/` tree lives on the separate 100 GiB ext4 Lima disk
+  `t65max-out`. Its sparse backing file is
   on the internal SSD under
   `~/Library/Application Support/T65MaxLineage/lima/_disks/t65max-out`; the
   external Lima disk registry contains only a symlink to it. Inside the VM it
@@ -91,6 +96,15 @@ suspend require on-device validation before being considered complete.
   that mount or symlink is absent, preventing accidental cache recreation on
   the nearly full external data disk. The Colima configuration helper restores
   the extra-disk attachment idempotently if Colima regenerates `lima.yaml`.
+- Do not split `out/soong/.intermediates` across filesystems. Soong's `sbox`
+  atomically renames generated files from `out/soong/.temp`; moving only the
+  `external` subtree to the data disk makes that operation fail with
+  `invalid cross-device link`. Keep both on the internal `out` ext4 disk.
+  The build preflight now rejects this invalid layout before expensive work.
+- Keep the bounded 12 GiB ccache outside `out`, at `$HOME/t65max/ccache` on
+  the VM's external-data-backed ext4 disk. This preserves compiler hits while
+  avoiding another 8-12 GiB of allocation in the scarce internal sparse
+  `t65max-out` backing file.
 - Do not use the `lineage-fast` VirtioFS profile. Two repeatable macOS 27.0
   panics occurred while its VZ VM accessed the external USB source tree: first
   `watchdogd` and then `launchd` exited with signal 10, with a VirtioFS thread
@@ -117,6 +131,13 @@ suspend require on-device validation before being considered complete.
   reproducible `.aotcache`/`.flu` translation files. It does this only when no
   Android.bp, Android.mk, or make fragment is newer than that graph. Other
   failures and graph changes continue through the full correctness path.
+- Rosetta's AOT daemon can also abort in `Translator.cpp` while translating
+  the supplied x86_64 JDK. The visible symptom is a repeatable `Bus error` from
+  `signapk.jar`, even for `java -version`, while other x86 host tools still
+  work. Stopping only `rosettad` keeps stable on-demand Rosetta translation
+  available; the same signing command then succeeds. The build loop recognizes
+  this exact `signapk.jar`/`Bus error` pair, disables only the optional AOT
+  cache daemon and resumes the guarded existing Ninja graph.
 - The complete host-tool provisioning includes Ubuntu's `xxd` package. ADB's
   `bin2c_fastdeployagentscript` genrule invokes it directly. After repairing
   this exact missing-tool failure, the guarded fast path may reuse the existing
@@ -214,9 +235,22 @@ suspend require on-device validation before being considered complete.
   `property_get`/`property_set` API without declaring `libcutils.so`.
   Add that dependency during extraction; a complete proprietary-ELF scan
   found no other blob with the same missing dependency.
+- Lineage 23.2's current `libbase` removed the old non-template `Trim` and
+  `Basename` string overloads and the string-based `WriteStringToFd` overload
+  still imported by seven verified A8D4 blobs, including the stock sensors and
+  USB HAL services. Keep current `libbase` and add
+  only these three forwarding entry points in the source-built 32/64-bit
+  `libt65max_libbase_compat` shim. Extraction adds that shim only to the seven
+  ELF files proven by comparison against the built vendor `libbase` export
+  tables; do not disable ELF checking or replace the complete platform library.
 - Use the source-built `android.system.wifi.keystore@1.0` HIDL interface
   library; retain and validate the proprietary `libkeystore-wifi-hidl.so`
   consumer.
+- Do not copy the resolved stock `<sepolicy><version>31.0</version>` block into
+  the source device-manifest input. Lineage's `assemble_vintf` injects its
+  current `BOARD_SEPOLICY_VERS` (`202504` in this checkout); retaining both
+  values is rejected as an override. Keep the verified device and kernel
+  target level 6 declarations. This XML-only repair can reuse the Ninja graph.
 - The clean `lineage-23.2` tree contains frozen Health and Boot AIDL snapshots
   whose `.aidl` files match the generated dumps byte-for-byte, but whose
   `.hash` metadata is rejected by the current AIDL equality checker. The build
